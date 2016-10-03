@@ -16,6 +16,7 @@ namespace GeorgRinger\Eventnews\Hooks;
  */
 
 use GeorgRinger\Eventnews\Domain\Model\Dto\Demand;
+use GeorgRinger\News\Utility\ConstraintHelper;
 use TYPO3\CMS\Extbase\Persistence\QueryInterface;
 
 class AbstractDemandedRepository
@@ -76,6 +77,18 @@ class AbstractDemandedRepository
 
                 $dateConstraints = $this->getDateConstraint($query, $dateField, $begin, $end);
                 $constraints['datetime'] = $query->logicalOr($dateConstraints);
+            } elseif ($demand->getTimeRestriction() || $demand->getTimeRestrictionHigh()) {
+                // Time restriction low
+                $begin = $demand->getTimeRestriction() ?
+                    ConstraintHelper::getTimeRestrictionLow($demand->getTimeRestriction()) : 0;
+
+                // Time restriction high
+                $end = $demand->getTimeRestrictionHigh() ?
+                    ConstraintHelper::getTimeRestrictionHigh($demand->getTimeRestrictionHigh()) : 0;
+
+                $dateField = $demand->getDateField();
+                $dateConstraints         = $this->getDateConstraint($query, $dateField, $begin, $end);
+                $constraints['datetime'] = $query->logicalOr($dateConstraints);
             }
 
             $organizers = $demand->getOrganizers();
@@ -112,36 +125,45 @@ class AbstractDemandedRepository
      */
     protected function getDateConstraint(\TYPO3\CMS\Extbase\Persistence\QueryInterface $query, $dateField, $begin, $end)
     {
+        $noEndDate = array();
+        $begin ? ($noEndDate[] = $query->greaterThanOrEqual($dateField, $begin)) : null;
+        $end ? ($noEndDate[] = $query->lessThanOrEqual($dateField, $end)) : null;
+
         $eventsWithNoEndDate = array(
-            $query->logicalAnd(
-                $query->greaterThanOrEqual($dateField, $begin),
-                $query->lessThanOrEqual($dateField, $end)
-            )
+            $query->logicalAnd($noEndDate)
         );
 
+        // event inside a month, e.g. 3.3 - 8.3
+        $insideMonth = array();
+        $begin ? ($insideMonth[] = $query->greaterThanOrEqual($dateField, $begin)) : null;
+        $end ? ($insideMonth[] = $query->lessThanOrEqual($dateField, $end)) : null;
+        $end ? ($insideMonth[] = $query->lessThanOrEqual('eventEnd', $end)) : null;
+
+        // event expanded from month before to month after
+        $expandedMonthBeforeToMonthAfter = array();
+        $begin ? ($expandedMonthBeforeToMonthAfter[] = $query->lessThanOrEqual($dateField, $begin)) : null;
+        $end ? ($expandedMonthBeforeToMonthAfter[] = $query->greaterThanOrEqual('eventEnd', $end)) : null;
+
         $eventsWithEndDate = array(
-            // event inside a month, e.g. 3.3 - 8.3
-            $query->logicalAnd(
-                $query->greaterThanOrEqual('datetime', $begin),
-                $query->lessThanOrEqual('datetime', $end),
-                $query->lessThanOrEqual('eventEnd', $end)
-            ),
-            // event expanded from month before to month after
-            $query->logicalAnd(
-                $query->lessThanOrEqual($dateField, $begin),
-                $query->greaterThanOrEqual('eventEnd', $end)
-            ),
-            // event from month before to mid of month
-            $query->logicalAnd(
+            $query->logicalAnd($insideMonth),
+            $query->logicalAnd($expandedMonthBeforeToMonthAfter)
+        );
+
+        // event from month before to mid of month
+        if ($begin) {
+            $eventsWithEndDate[] = $query->logicalAnd(
                 $query->lessThanOrEqual($dateField, $begin),
                 $query->greaterThanOrEqual('eventEnd', $begin)
-            ),
-            // event from mid month to next month
-            $query->logicalAnd(
+            );
+        }
+
+        // event from mid month to next month
+        if ($end) {
+            $eventsWithEndDate[] = $query->logicalAnd(
                 $query->lessThanOrEqual($dateField, $end),
                 $query->greaterThanOrEqual('eventEnd', $end)
-            )
-        );
+            );
+        }
 
         $dateConstraints = array(
             $query->logicalAnd($eventsWithNoEndDate),
