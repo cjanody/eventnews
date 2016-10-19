@@ -30,7 +30,10 @@ class AbstractDemandedRepository
      */
     public function modify(array $params)
     {
-        if (get_class($params['demand']) !== 'GeorgRinger\\Eventnews\\Domain\\Model\\Dto\\Demand') {
+        if (
+            get_class($params['demand']) !== 'GeorgRinger\\Eventnews\\Domain\\Model\\Dto\\Demand'
+            || $params['query']->getType() === 'GeorgRinger\\News\\Domain\\Model\\Tag'
+        ) {
             return;
         }
 
