@@ -66,6 +66,8 @@ class AbstractDemandedRepository
         } elseif ($eventRestriction === Demand::EVENT_RESTRICTION_ONLY_EVENTS) {
             // reset datetime constraint
             unset($constraints['datetime']);
+            unset($constraints['timeRestrictionLess']);
+            unset($constraints['timeRestrictionGreater']);
             $constraints[] = $query->equals('isEvent', 1);
 
             if ($demand->getMonth() && $demand->getYear()) {
